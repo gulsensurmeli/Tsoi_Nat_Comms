@@ -1,0 +1,466 @@
+---
+title: "snr_mutual_info_bootstrap_analysis"
+author: "Edward Agboraw"
+date: "2025-08-06"
+output: html_document
+---
+
+## Set Up Environment
+```{r setup, include=FALSE}
+
+library(mpmi)
+library(ggplot2)
+library(ks)
+library(mvtnorm)
+library(dplyr)
+library(readxl)
+
+```
+
+## AIM
+
+Our goal here is to use the Mutual Information metric to quantify the extent 
+to which the spatial coordinates and projection-group (ORB, RSC, ORB-RSC) of
+EC L5a neurons co-vary.
+
+## Get Data
+
+```{r get_data}
+
+path = getwd()
+data = read_csv(paste0(path,"/preprocessed_data/master_detailed_comment.csv"))
+data$proj[data$neuron_ID == "1114_10"] <- "rsp_orb"
+data$proj[data$neuron_ID == "1849931_7"] <- "rsp_orb"
+
+# filter for rows with projection values
+
+data = data[data$proj %in% c("rsp", "orb", "rsp_orb"),]
+
+# remove all neurons from brain 1849929
+data = data %>% filter(mouseID != 1849929)
+
+print(head(data))
+```
+
+Here we extract our "projection" and "coordinate" info as two separate matrices.
+
+```{r format_coords}
+
+coords = as.matrix(select(data, x, y, z))
+
+proj = as.matrix(data$proj)
+
+```
+
+
+Sara Wade has created a function, based on the mpmi package, which lets us 
+calculate the Mutual Information between a continuous and a categorical value.
+
+Our continuous variable is multi-dimensional, so native mpmi functionality only
+reports the pairwise mutual info metrics (e.g. x_proj, y_proj, z_proj).
+
+This function, however, returns a single mutual information metric:
+xyz_proj. 
+
+A fuller exploration of Sara's Code is available in mi.R
+
+## Original MI Function
+
+```{r mi_function}
+
+mi = function(x,y, S= 5000, compute.entropy = TRUE){
+  
+  n = length(y)
+  p = dim(x)
+
+  # Step 1: compute kde for the coordinates
+  kde.x = kde(x, supp = 10)
+
+  # Step 2: compute kde for each group
+  cats = unique(y)
+  kde.groups = lapply(cats, function(c){ kde(x[y==c,], supp = 10)})
+
+  # Draw importance samples from proposal
+  y.is = matrix(sample(cats,S, replace = TRUE, prob = table(y)/n), S, 1)
+  x.is = t(apply(y.is, 1, function(c){
+     i = sample(which(y==c), size =1)
+     rmvnorm(1, mean = x[i,], sigma = kde.groups[[which(c==cats)]]$H)
+  }))
+
+  # Calculate IS estimate of MI
+  mi.is =  sapply(1:S,function(s){
+    log2(predict(kde.groups[[which(y.is[s]==cats)]], x = x.is[s,] ))  -  log2(predict(kde.x, x = x.is[s,]))
+  })
+
+  e.x = NA
+  if(compute.entropy==TRUE){
+    # Compute entropy of x
+    x.is.all = t(sapply(1:S, function(s){
+      i = sample(1:n, size =1)
+      rmvnorm(1, mean = x[i,], sigma = kde.x$H)
+    }))
+    e.s = sapply(1:S,function(s){
+      -log2(predict(kde.x, x = x.is.all[s,]))
+    })
+    e.x = mean(e.s)
+  }
+  
+  e.y = NA
+  if(compute.entropy==TRUE){
+    # Compute entropy of y
+    py = table(y)/n
+    e.y = sum(-py*log2(py))
+  }
+
+  return(list(mi = mean(mi.is), kde.x = kde.x, kde.groups = kde.groups, entrop.x = e.x, entrop.y = e.y))
+}
+
+
+```
+
+## Calculate the "observed" Mutual Information
+
+```{r pressure, echo=FALSE}
+
+x1 = coords
+y1 = proj
+
+mi.xy = mi(x1, y1)
+
+print(paste("MI:", round(mi.xy$mi,3)))
+
+# normalize to unit interval
+norm_mi = round(mi.xy$mi/max(dmi(cbind(y1,y1))$mi[1,1],mi.xy$entrop.x),3)
+
+# Normalize to the unit interval by dividing by the max entropies
+print(paste("Normalized MI:", norm_mi))
+
+```
+
+Normalized MI = 0.043
+
+Value is above zero - but is it significantly above zero?
+To do this, we can check if the 95% Confidence Interval of the Sampling 
+Distribution contains zero.
+
+And we can generate this Sampling Distribution via Bootstrapping.
+
+## Normalization Update (from Sara Wade)
+
+Various different proposals exist to normalize the MI. 
+One option is to divide by the maximum of the entropies.
+
+Another is the Uncertainty Coefficient, which divides by the entropy of 𝑦
+; Given the coordinates, how well can we determine the projection type?
+
+The MI function has been updated to return the enthropy of y: here we use that
+value to calculate the Uncertainty Coefficient.
+
+```{r}
+
+uncer_coeff = mi.xy$mi/mi.xy$entrop.y
+
+# Normalize to the unit interval by dividing by the max entropies
+print(paste("Uncertainty Coefficient:", round(uncer_coeff, 3)))
+
+```
+
+Uncertainty Coefficient: 0.833
+
+## Bayesian Bootstrapping
+
+Using the above function worked for the empirical data, but resulted in the 
+return of Inf/-Inf/NaN values during bootstrapping. This was due to resampling
+sometimes created bootstrapped datasets with very low variability / too many 
+duplicate values. 
+
+We get around this problem by using Bayesian Bootstrapping, via an updated MI
+function.
+
+https://matteocourthoud.github.io/post/bayes_boot/
+https://www.geeksforgeeks.org/r-language/dirichlet-distribution-in-r/
+
+```{r bayes_boot_mi}
+
+mi_bayes = function(x,y, S= 5000, compute.entropy = TRUE){
+  
+  n = length(y)
+  p = dim(x)
+  
+  # generate weights using the dirichlet Distribution
+  weights = n * as.numeric(gtools::rdirichlet(1, rep(1, n)))
+
+  # Step 1: compute kde for the coordinates
+  kde.x = kde(x, supp = 10, w = weights)
+
+  # Step 2: compute kde for each group
+  cats = unique(y)
+  kde.groups = lapply(cats, function(c){ kde(x[y==c,], supp = 10,
+                                             w = weights[y==c])})
+
+  # Draw importance samples from proposal
+  py_weighted = sapply(cats, function(c){sum(weights[y==c])/n})
+  y.is = matrix(sample(cats,S, replace = TRUE, prob = py_weighted), S, 1)
+  x.is = t(apply(y.is, 1, function(c){
+     i = sample(which(y==c), size =1, prob = weights[y==c]/sum(weights[y==c]))
+     rmvnorm(1, mean = x[i,], sigma = kde.groups[[which(c==cats)]]$H)
+  }))
+
+  # Calculate IS estimate of MI
+  mi.is =  sapply(1:S,function(s){
+    log2(predict(kde.groups[[which(y.is[s]==cats)]], x = x.is[s,] ))  -  log2(predict(kde.x, x = x.is[s,]))
+  })
+
+  e.x = NA
+  if(compute.entropy==TRUE){
+    # Compute entropy of x
+    x.is.all = t(sapply(1:S, function(s){
+      i = sample(1:n, size =1, prob = weights/sum(weights))
+      rmvnorm(1, mean = x[i,], sigma = kde.x$H)
+    }))
+    e.s = sapply(1:S,function(s){
+      -log2(predict(kde.x, x = x.is.all[s,]))
+    })
+    e.x = mean(e.s)
+  }
+  
+  e.y = NA
+  if(compute.entropy==TRUE){
+    # Compute entropy of y
+    e.y = sum(-py_weighted*log2(py_weighted))
+  }
+
+  return(list(mi = mean(mi.is), kde.x = kde.x, kde.groups = kde.groups, entrop.x = e.x, entrop.y = e.y))
+}
+
+```
+
+
+
+No more pre-function re-sampling should be needed. These two calls should return
+different MI values, even though they accept the same input data.
+
+```{r test_m_weights}
+
+# test 1
+mi.t1 = mi_bayes(x1, y1)
+print(paste("MI:", round(mi.t1$mi,3)))
+
+# Normalize to the unit interval by dividing by the max entropies
+norm1_mi_t1 = mi.t1$mi/max(mi.t1$entrop.y, mi.t1$entrop.x)
+print(paste("Normalized MI (by max):", round(norm1_mi_t1,3)))
+
+# Normalize to the unit interval by dividing by the entropy of y
+norm2_mi_t1 = mi.t1$mi/mi.t1$entrop.y
+print(paste("Uncertainty Coefficient:", round(norm2_mi_t1,3)))
+
+```
+
+
+```{r}
+
+# test 2
+mi.t2 = mi(x1, y1)
+print(paste("MI:", round(mi.t2$mi,3)))
+
+# normalize to unit interval
+norm1_mi_t2 = mi.t2$mi/max(mi.t2$entrop.y, mi.t2$entrop.x)
+norm2_mi_t2 = mi.t2$mi/mi.t2$entrop.y
+# Normalize to the unit interval by dividing by the max entropies
+print(paste("Normalized MI (by max):", round(norm1_mi_t2,3)))
+
+# Normalize to the unit interval by dividing by the entropy of y
+print(paste("Uncertainty Coefficient:", round(norm2_mi_t2,3)))
+
+
+```
+
+## Bootstrapping (Sara)
+
+```{r}
+
+B =1000 # Number of bootstrap repetitions
+
+bootstrap_nMIs = sapply(1:B, function(b){
+  # separate re-sampled X and Y matrices
+  x_r = as.matrix(select(data, x, y, z))
+  y_r = as.matrix(data$proj)
+  
+  # calculate new MI
+  mi.r = mi_bayes(x_r, y_r)
+  
+  # get normalized mi
+  norm1_mi = mi.r$mi/max(mi.r$entrop.y,mi.r$entrop.x)
+  norm2_mi = mi.r$mi/mi.r$entrop.y
+  return(c(norm1_mi, norm2_mi))
+})
+
+```
+
+# Visualize Bootstrap Sampling Distribution (post-Sara Block)
+
+```{r}
+
+# remove any inf and na values from the vector
+bootstrap_nMI1s = bootstrap_nMIs[1,]
+bootstrap_nMI2s = bootstrap_nMIs[2,]
+bootstrap_nMI1s = bootstrap_nMI1s[!is.na(bootstrap_nMI1s) & !is.infinite(bootstrap_nMI1s)]
+bootstrap_nMI2s = bootstrap_nMI2s[!is.na(bootstrap_nMI2s) & !is.infinite(bootstrap_nMI2s)]
+
+
+```
+
+```{r bs_norm_mi}
+
+# Plot histogram with quantiles
+qs = quantile(bootstrap_nMI1s, probs = c(0.025, 0.975))
+ggplot() +
+  geom_histogram(aes(x=bootstrap_nMI1s), fill = "lightgray") +
+  geom_vline(xintercept = qs[1], color = "red") +
+  geom_vline(xintercept = qs[2], color = "red") +
+  geom_vline(xintercept = mean(bootstrap_nMI1s), color = "black") +
+  theme_bw() +
+  labs(x="normalized mutual information")
+
+
+```
+
+```{r}
+
+print(paste0('Normalized MI (by max): ', mean(bootstrap_nMI1s),' [', qs[1], ', ', qs[2],']'))
+
+```
+
+```{r bs_uncer_coeff}
+
+# Plot histogram with quantiles
+qs = quantile(bootstrap_nMI2s, probs = c(0.025, 0.975))
+ggplot() +
+  geom_histogram(aes(x=bootstrap_nMI2s), fill = "lightgray") +
+  geom_vline(xintercept = qs[1], color = "red") +
+  geom_vline(xintercept = qs[2], color = "red") +
+  geom_vline(xintercept = mean(bootstrap_nMI2s), color = "black") +
+  theme_bw() +
+  labs(x="uncertainty coefficient")
+
+```
+
+
+```{r}
+
+print(paste0('Uncertainty coefficient: ', mean(bootstrap_nMI2s),' [', qs[1],', ', qs[2],']'))
+
+```
+
+```{r}
+
+qnorm(0.025, mean = norm1_mi, sd = sd(bootstrap_nMI1s))
+
+```
+
+```{r}
+
+qnorm(0.975, mean = norm1_mi, sd = sd(bootstrap_nMI1s))
+
+```
+
+```{r}
+
+qnorm(0.025, mean = norm2_mi, sd = sd(bootstrap_nMI2s))
+
+```
+
+```{r}
+
+qnorm(0.975, mean = norm2_mi, sd = sd(bootstrap_nMI2s))
+
+```
+
+## Stat Tests
+
+```{r}
+
+pnorm(norm1_mi, mean = 0, sd = sd(bootstrap_nMI1s), lower.tail = FALSE)
+
+```
+
+
+```{r}
+
+pnorm(norm2_mi, mean = 0, sd = sd(bootstrap_nMI2s), lower.tail = FALSE)
+
+```
+
+```{r}
+
+# If the uncertainty coefficient is truly 1, what is the probability of observing
+# a UC as small as the observed UC or smaller?
+pnorm(norm2_mi, mean = 1, sd = sd(bootstrap_nMI2s), lower.tail = TRUE)
+
+```
+
+## One-Tailed T-test Alternative
+
+```{r}
+
+t_stat = (norm1_mi - 0) / sd(bootstrap_nMI1s)
+
+
+pt(t_stat, df = (length(bootstrap_nMI1s) - 1), lower.tail = FALSE)
+
+```
+
+```{r}
+
+t_stat = (norm2_mi - 0) / sd(bootstrap_nMI2s)
+
+
+pt(t_stat, df = (length(bootstrap_nMI2s) - 1), lower.tail = FALSE)
+
+```
+
+```{r}
+
+t_stat = (norm2_mi - 1) / sd(bootstrap_nMI2s)
+
+
+pt(t_stat, df = (length(bootstrap_nMI2s) - 1), lower.tail = TRUE)
+
+```
+
+## Permutation Test Alternative
+
+```{r}
+
+P =1000 # Number of permutations
+
+permuted_nMIs = sapply(1:P, function(p){
+  # separate re-sampled X and Y matrices
+  x_r = as.matrix(select(data, x, y, z))
+  y_r = as.matrix(data$proj)
+  n = length(y_r)
+  perm = sample(c(1:n), size = n, replace=FALSE)
+  x_r = x_r[perm,]
+  
+  # calculate new MI
+  mi.r = mi(x_r, y_r)
+  
+  # get normalized mi
+  norm1_mi = mi.r$mi/max(mi.r$entrop.y,mi.r$entrop.x)
+  norm2_mi = mi.r$mi/mi.r$entrop.y
+  return(c(norm1_mi, norm2_mi))
+})
+
+```
+
+```{r}
+
+print(paste('Permutation test p-value:',mean(permuted_nMIs[1,]>norm1_mi)))
+
+```
+
+```{r}
+
+print(paste('Permutation test p-value:',mean(permuted_nMIs[2,]>norm2_mi)))
+
+```

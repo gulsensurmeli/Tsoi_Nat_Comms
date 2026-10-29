@@ -1,0 +1,196 @@
+---
+title: "Figure 3A"
+author: "Edward Agboraw"
+date: "2026-08-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+# load libraries
+library(dplyr)
+library(tidyverse)
+library(ggpubr)
+
+```
+
+## Load Data
+
+
+```{r load_data}
+
+ec_data = read.csv("ec_manuscript_data.csv", row.names = 1)
+
+
+```
+
+Convert into HBMAP format for later use:
+```{r}
+
+# define target regions of interest
+targets = c("PFC", "ORB", "MO", "ACA", "SS", "VIS", "PTL", "RSC")
+R = length(targets)
+
+# subset by target area + brain metadata column
+ec_targets = ec_data %>% select(all_of(c(targets, "brain")))
+
+# now we can convert to the standard hbmap input format
+EC8_new = lapply(unique(ec_targets$brain), function(cat){
+  t(ec_targets[ec_targets$brain==cat,1:R])
+})
+
+EC8_EC_label <- lapply(unique(ec_data$brain), function(cat){
+  
+  ec_data[ec_data$brain==cat,]$EC
+
+})
+
+```
+
+We also load the HBMAP results for the ec_data.
+
+```{r mcmc_unique}
+
+mcmc_unique_EC8 = readRDS("ec_hbmap_results.rds")
+
+```
+
+Extract Motif Allocations, and add to barcode count matrix as new column.
+```{r}
+
+EC8_Z_reordered = mcmc_unique_EC8$Z
+
+ec_data$allocation = unlist(EC8_Z_reordered)
+
+```
+
+## Define Function
+
+```{r heatmap_function}
+
+pp.standard.ordering.EC <- function(Y,
+                                  Z,
+                                  regions.name = NULL,
+                                  title = '',
+                                  EC_label){
+
+
+  # get the maximum number of clusters in the data
+  J <- max(unlist(Z)) 
+  
+  # total number of regions in the data
+  R <- nrow(Y[[1]])
+
+  if(is.null(regions.name)){
+
+    regions.name <- paste('region', 1:R)
+  }
+
+  # combine transposed brain bc matrices together
+  Y.cbind <- do.call(cbind, Y) 
+  
+  # calculate projection strengths from the barcode counts in Y.cbind
+  Y.prop.cbind <- matrix(as.vector(Y.cbind)/rep(colSums(Y.cbind), each = R),
+                         nrow = R)
+  
+
+  # flatten EC assignments into a single long list
+  EC_label_combine <- unlist(EC_label) 
+  
+  # get the total number of neurons in every cluster.
+  N.j <- sapply(1:J,
+                function(j) length(which(unlist(Z)==j)))
+  
+
+  # Re-ordered projection strength
+  df0 <- lapply(1:J, # iterate over every motif
+                function(j){
+
+                  # Projection strengths of neurons in cluster j
+                  mx0 <- matrix(Y.prop.cbind[,which(unlist(Z)==j)],
+                                nrow = R)
+                  # extract neurons in motif-j from the combined proj str matrix
+
+                  # EC labels
+                  EC_label_j <- EC_label_combine[which(unlist(Z)==j)]
+
+                  # Projection strengths of LEC neurons in cluster j
+                  mx0_LEC <- matrix(mx0[,which(EC_label_j == 'LEC')],
+                                    nrow = R)
+
+                  # Projection strengths of MEC neurons in cluster j
+                  mx0_MEC <- matrix(mx0[,which(EC_label_j == 'MEC')],
+                                    nrow = R)
+
+                  strong.proj.j <- which(rowSums(mx0) == max(rowSums(mx0)))[1]
+
+                  # Reorder projecting strengths for LEC and MEC
+                  mx0_LEC <- matrix(mx0_LEC[,order(mx0_LEC[strong.proj.j,])],
+                                    nrow = R)
+
+                  mx0_MEC <- matrix(mx0_MEC[,order(mx0_MEC[strong.proj.j,])],
+                                    nrow = R)
+
+                  cbind(mx0_LEC, -mx0_MEC)
+
+                })
+
+  df0 <- do.call(cbind, df0)
+
+  # Convert to data frame for plotting
+  Y.prop.df <- data.frame(region = rep(regions.name,
+                                       ncol(Y.prop.cbind)),
+
+                          neuron = rep(1:ncol(Y.prop.cbind),
+                                       each = length(regions.name)),
+
+                          projection.strength = as.vector(df0))
+
+
+  Y.prop.df %>%
+    ggplot(mapping = aes(x = factor(region, levels = regions.name),
+                         y = neuron,
+                         fill = projection.strength))+
+    geom_tile()+
+    theme_bw()+
+    scale_fill_gradientn(colours = c('#CB6400','white', '#16697A'),
+                         values = scales::rescale(c(-1, 0, 1)),
+                         limits = c(-1,1))+
+    guides(fill=guide_legend(title="projection strength"))+
+    xlab('region')+
+    theme(axis.text = element_text(size = 12),
+          axis.title = element_text(size = 12),
+          plot.title = element_text(size=12),
+          plot.background = element_blank() ,
+          panel.grid.major = element_blank() ,
+          panel.grid.minor = element_blank() ,
+          panel.border = element_blank() ,
+          panel.background = element_blank()) +
+    #draws x and y axis line
+    theme(axis.line = element_line(color = 'black'))+
+    ylab('neurons')+
+
+    geom_hline(yintercept = cumsum(N.j)[-length(cumsum(N.j))],
+               color = 'blue',
+               linetype = 'dashed',
+               linewidth = 0.05)+
+
+    ggtitle(title)+
+    scale_fill_gradient2(high = '#16697A', mid = "white", low = '#DB6400')
+
+
+}
+
+
+```
+
+
+## Generate Chart
+```{r}
+
+pp.standard.ordering.EC(Y = EC8_new,
+                        Z = mcmc_unique_EC8$Z,
+                        regions.name = rownames(EC8_new[[1]]),
+                        EC_label = EC8_EC_label)
+
+```

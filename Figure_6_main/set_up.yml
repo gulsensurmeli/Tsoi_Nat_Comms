@@ -1,0 +1,15 @@
+name: ec_analysis_fig_6
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.13
+  - pandas
+  - scipy
+  - seaborn
+  - tqdm
+  - matplotlib
+  - scikit-learn
+  
+

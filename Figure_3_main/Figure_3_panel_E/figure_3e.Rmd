@@ -1,0 +1,176 @@
+---
+title: "Figure 3E"
+author: "Edward Agboraw"
+date: "2026-08-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+# load libraries
+library(dplyr)
+library(tidyverse)
+library(ggpubr)
+
+```
+
+## Load Data
+
+Load the barcode count matrix
+```{r load_data}
+
+ec_data = read.csv("ec_manuscript_data.csv", row.names = 1)
+
+
+```
+
+Load the HBMAP results 
+```{r mcmc_unique}
+
+mcmc_unique_EC8 = readRDS("ec_hbmap_results.rds")
+
+```
+
+Extract Motif Allocations, and add to barcode count matrix as new column.
+```{r}
+
+EC8_Z_reordered = mcmc_unique_EC8$Z
+
+ec_data$allocation = unlist(EC8_Z_reordered)
+
+```
+
+## Define Function
+
+```{r}
+
+motif_summary_charts = function(ec_data, df2, chart_clusters){
+  
+  # define targets
+  nc_targets = c("PFC", "ORB", "MO", "SS", "ACA", "PTL", "VIS", "RSC")
+  
+  # reformat df2
+  df2 <- do.call(rbind, df2)
+  df2$region <- factor(df2$region,
+                     levels = nc_targets)
+  
+  LEC_proportion_overall <- nrow(ec_data[ec_data$EC == "LEC", ])/nrow(ec_data)
+  MEC_proportion_overall <- 1-LEC_proportion_overall
+  
+  # Proportion of LEC and MEC
+  motif_proportion <- lapply(chart_clusters,
+                               function(j){
+                                 
+                                 motif_data =  ec_data %>% filter(allocation == j)
+                                 motif_data_lec = motif_data %>% filter(EC == "LEC")
+                                 LEC_proportion = nrow(motif_data_lec)/nrow(motif_data)
+
+
+                                 MEC_proportion <- 1-LEC_proportion
+
+                                 data.frame(cluster = j,
+                                            EC = c('LEC','MEC'),
+                                            proportion = c(LEC_proportion, MEC_proportion))
+                                 
+                               })
+
+  motif_proportion <- do.call(rbind, motif_proportion)
+  
+  # For each cluster
+  plot1 <- lapply(chart_clusters,
+                function(j){
+
+                  df2 %>%
+                    filter(cluster == paste('cluster', j)) %>%
+                    ggplot(mapping = aes(x = region,
+                                         y = mean_projection_strength,
+                                         group = 1))+
+                    geom_line()+
+                    geom_errorbar(mapping = aes(ymin = lower_projection_strength,
+                                                ymax = upper_projection_strength),
+                                  width = 0.1)+
+                    geom_point()+
+                    theme_bw()+
+                    ylab('projection probability')+
+                    theme(axis.line = element_line(colour = "black"),
+                          panel.grid.major = element_blank(),
+                          panel.grid.minor = element_blank(),
+                          panel.border = element_blank(),
+                          panel.background = element_blank(),
+                          axis.text = element_text(size = 10,
+                                                   color = 'black')
+                          )+
+                    scale_y_continuous(breaks = c(0,1), limits = c(0,1))
+                })
+  
+  plot2 <- lapply(chart_clusters,
+                function(j){
+
+                  motif_proportion %>%
+                    filter(cluster == j) %>%
+                    ggplot(aes(x = factor(cluster, levels = chart_clusters),
+                               y = proportion,
+                               fill = EC))+
+                    geom_bar(stat = 'identity')+
+                    theme_bw()+
+                    xlab('')+
+                    ylab('')+
+                    scale_fill_manual(values=c(LEC = '#16697A', MEC = '#DB6400'))+
+                    geom_hline(yintercept=MEC_proportion_overall, linetype="solid",
+                               color = "red",
+                               linewidth = 1.5)+
+                    coord_flip()+
+                    ggtitle(paste0(nrow(ec_data[ec_data$allocation == j, ]), ' neurons, ',
+                              nrow(ec_data[ec_data$allocation == j & ec_data$EC == "LEC", ]), ' LEC, ',
+                              nrow(ec_data[ec_data$allocation == j & ec_data$EC == "MEC", ]), ' MEC')) +
+                    
+                    theme(legend.title=element_blank())+
+                    theme(legend.position="none")+
+                    xlab('')+
+                    scale_y_continuous(breaks = c(0,1))+
+                    theme(axis.line = element_line(colour = "black"),
+                          panel.grid.major = element_blank(),
+                          panel.grid.minor = element_blank(),
+                          panel.border = element_blank(),
+                          panel.background = element_blank(),
+                          plot.title = element_text(size=12))+
+                    theme(axis.text = element_text(size = 12))
+
+                })
+  
+  plot_all <- lapply(1:3, function(i) ggarrange(plot2[[i]], plot1[[i]], nrow = 2, heights = c(0.45,1)))
+
+  return(plot_all)
+  
+  
+}
+
+
+
+```
+
+
+## Generate Figure
+
+```{r}
+
+nc_targets = c("PFC","ORB", "MO", "SS", "ACA", "PTL", "VIS", "RSC")
+
+chart_clusters_3e = c(1,6,5)
+
+df2_3e = lapply(chart_clusters_3e,
+              function(j){
+
+                data.frame(cluster = paste('cluster', j),
+                           region = nc_targets,
+                           mean_projection_strength = mcmc_unique_EC8$proj_prob_med[j,],
+                           lower_projection_strength = mcmc_unique_EC8$proj_prob_lower[j,],
+                           upper_projection_strength = mcmc_unique_EC8$proj_prob_upper[j,])
+              })
+
+
+motif_summary_charts(ec_data, df2_3e, chart_clusters_3e)
+
+```

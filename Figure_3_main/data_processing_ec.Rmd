@@ -1,0 +1,771 @@
+---
+title: "data_processing_ec_map1"
+author: "Edward Agboraw"
+date: "2026-01-17"
+output: html_document
+---
+
+---
+title: "ec_processing"
+author: "Maria Dolak / Edward Agboraw"
+date: "2023-06-05"
+output: pdf_document
+---
+
+Define working environment
+```{r setup}
+
+# Read in necessary packages
+library(tidyverse)
+library(mltools)
+
+```
+
+
+```{r}
+
+# Data set of barcodes that were present in both first and second round (NA removed - hence the name)
+
+# Variables from the first round dataset end with .x, variables from the second round dataset end with .y
+no_NAs <- read.csv("data/no_NAs.csv")
+
+```
+
+# Read spike-in raw data for both sequencing rounds
+```{r}
+# Read in spike-in data
+spikes_first_round <- readRDS("data/spikes_first_round.rds")
+spikes_second_round <- readRDS("data/spikes_second_round.rds")
+```
+
+# Spike-in normalisation
+```{r}
+# Targets and negative controls are in samples 1-90
+# 91 and 92 are other controls
+# 93-110 are injection sites
+# 111 water sample that is of the same magnitude of spike-in counts as the injections
+
+
+# # Identify highest spike-in count among targets for the round 1
+# spikes_first_round[1:92]
+# max(spikes_first_round[1:92])
+# # Which columns has the max
+# which.max(spikes_first_round[1:92])
+# #
+# # Identify highest spike-in count among injections for the round
+# spikes_first_round[93:111]
+# max(spikes_first_round[93:111])
+# # Which columns has the max
+# which.max(spikes_first_round[93:111])+92
+
+# Get the first round columns and normalise them by the spike-in counts
+first_round <- no_NAs[, c(1:111, 222)]
+factor_targets <- max(spikes_first_round[1:92])
+factor_injections <- max(spikes_first_round[93:111])
+
+
+for(i in 1:92){
+  first_round[,i] <- (first_round[,i]/spikes_first_round[i])*factor_targets
+}
+
+for(i in 93:111){
+  first_round[,i] <- (first_round[,i]/spikes_first_round[i])*factor_injections
+}
+
+```
+
+```{r}
+# Targets and negative controls are in samples 1-90
+# 91 and 92 are other controls
+# 93-110 are injection sites
+# no water sample (ONE LESS COLUMN)
+
+# # Identify highest spike-in count among targets for the round 2
+# spikes_second_round[1:92]
+# max(spikes_second_round[1:92])
+# # Which columns has the max
+# which.max(spikes_second_round[1:92])
+# 
+# # Identify highest spike-in count among injections for the round 2
+# spikes_second_round[93:110]
+# max(spikes_second_round[93:110])
+# # Which columns has the max
+# which.max(spikes_second_round[93:110])+92
+# 
+# Get the first round columns and normalise them by the spike-in counts
+second_round <- no_NAs[, c(112:222)]
+factor_targets2 <- max(spikes_second_round[1:92])
+factor_injections2 <- max(spikes_second_round[93:110])
+
+
+for(i in 1:92){
+  second_round[,i] <- (second_round[,i]/spikes_second_round[i])*factor_targets2
+}
+
+for(i in 93:110){
+  second_round[,i] <- (second_round[,i]/spikes_second_round[i])*factor_injections2
+}
+```
+
+# Divide the Data by Brain
+
+```{r}
+# Divide the data by the brain, always keep the id columns
+# f stands for "first"
+
+# Columns based on the file "Mseq226 sample code in barcode matrix"
+# ECT and AUD are not included following the exploration analysis
+
+brain1f <- first_round[, c(1:7, 10:13, 93, 14, 15, 112)]
+
+brain2f <- first_round[, c(16:22, 25:28, 94, 29, 30, 95:97, 112)]
+  
+brain3f <- first_round[, c(31:37, 40:43, 98, 44, 45, 99, 100, 112)]
+
+brain4f <- first_round[, c(46:52, 55:58, 101, 59, 60, 102:104, 112)]
+
+brain5f <- first_round[, c(61:67, 70:73, 105, 74, 75, 106, 107, 112)]
+
+brain6f <- first_round[, c(76:82, 85:88, 108, 89, 90, 109, 110, 112)]
+
+```
+
+```{r}
+# Divide the data by the brain, always keep the id columns
+# s stands for "second"
+
+brain1s <- second_round[, c(1:7, 10:13, 93, 14, 15, 111)]
+
+brain2s <- second_round[, c(16:22, 25:28, 94, 29, 30, 95:97, 111)]
+  
+brain3s <- second_round[, c(31:37, 40:43, 98, 44, 45, 99, 100, 111)]
+
+brain4s <- second_round[, c(46:52, 55:58, 101, 59, 60, 102:104, 111)]
+
+brain5s <- second_round[, c(61:67, 70:73, 105, 74, 75, 106, 107, 111)]
+
+brain6s <- second_round[, c(76:82, 85:88, 108, 89, 90, 109, 110, 111)]
+
+```
+
+
+# 2-Remove all barcodes with an inj site count of 0 in all injection sites.
+
+
+```{r}
+# Removing rows that had 0 counts at all injection sites in that particular brain: first round
+
+# Keep only rows where count at either injection site is greater than 0
+brain1f <- brain1f %>% filter(V93.x > 0)
+brain2f <- brain2f %>% filter(V94.x > 0 | V95.x > 0 | V96.x > 0 | V97.x > 0)
+brain3f <- brain3f %>% filter(V98.x > 0 | V99.x > 0 | V100.x > 0)
+brain4f <- brain4f %>% filter(V101.x > 0 | V102.x > 0 | V103.x > 0 | V104.x > 0)
+brain5f <- brain5f %>% filter(V105.x > 0 | V106.x > 0 | V107.x > 0)
+brain6f <- brain6f %>% filter(V108.x > 0 | V109.x > 0 | V110.x > 0)
+```
+
+```{r}
+# Removing rows that had 0 counts at all injection sites in that particular brain: second round
+
+# Keep only rows where count at either injection site is greater than 0
+brain1s <- brain1s %>% filter(V93.y > 0)
+brain2s <- brain2s %>% filter(V94.y > 0 | V95.y > 0 | V96.y > 0 | V97.y > 0)
+brain3s <- brain3s %>% filter(V98.y > 0 | V99.y > 0 | V100.y > 0)
+brain4s <- brain4s %>% filter(V101.y > 0 | V102.y > 0 | V103.y > 0 | V104.y > 0)
+brain5s <- brain5s %>% filter(V105.y > 0 | V106.y > 0 | V107.y > 0)
+brain6s <- brain6s %>% filter(V108.y > 0 | V109.y > 0 | V110.y > 0)
+```
+
+# 3 - percent of barcodes with NC count detected whenever an injection was over 0
+
+```{r}
+# Calculating the proportion of barcodes that were also detected 
+# at negative control
+
+# Number of barcodes that had value over 0 at the negative control 
+# over total number of barcodes in a brain.
+# Rounded to 8 decimal places
+
+# Repeated for each brain
+
+round(dim(brain1f[brain1f$V15.x > 0,])[1]/dim(brain1f)[1], 8)
+round(dim(brain2f[brain2f$V30.x > 0,])[1]/dim(brain2f)[1], 8)
+round(dim(brain3f[brain3f$V45.x > 0,])[1]/dim(brain3f)[1], 8)
+round(dim(brain4f[brain4f$V60.x > 0,])[1]/dim(brain4f)[1], 8)
+round(dim(brain5f[brain5f$V75.x > 0,])[1]/dim(brain5f)[1], 8)
+round(dim(brain6f[brain6f$V90.x > 0,])[1]/dim(brain6f)[1], 8)
+
+round(dim(brain1s[brain1s$V15.y > 0,])[1]/dim(brain1s)[1], 8)
+round(dim(brain2s[brain2s$V30.y > 0,])[1]/dim(brain2s)[1], 8)
+round(dim(brain3s[brain3s$V45.y > 0,])[1]/dim(brain3s)[1], 8)
+round(dim(brain4s[brain4s$V60.y > 0,])[1]/dim(brain4s)[1], 8)
+round(dim(brain5s[brain5s$V75.y > 0,])[1]/dim(brain5s)[1], 8)
+round(dim(brain6s[brain6s$V90.y > 0,])[1]/dim(brain6s)[1], 8)
+```
+
+```{r}
+# Calculating SEM for the first round
+sd(brain1f$V15.x)/sqrt(length(brain1f$V15.x))
+sd(brain2f$V30.x)/sqrt(length(brain2f$V30.x))
+sd(brain3f$V45.x)/sqrt(length(brain3f$V45.x))
+sd(brain4f$V60.x)/sqrt(length(brain4f$V60.x))
+sd(brain5f$V75.x)/sqrt(length(brain5f$V75.x))
+sd(brain6f$V90.x)/sqrt(length(brain6f$V90.x))
+```
+
+```{r}
+# Calculating SEM for the second round
+sd(brain1s$V15.y)/sqrt(length(brain1s$V15.y))
+sd(brain2s$V30.y)/sqrt(length(brain2s$V30.y))
+sd(brain3s$V45.y)/sqrt(length(brain3s$V45.y))
+sd(brain4s$V60.y)/sqrt(length(brain4s$V60.y))
+sd(brain5s$V75.y)/sqrt(length(brain5s$V75.y))
+sd(brain6s$V90.y)/sqrt(length(brain6s$V90.y))
+```
+
+```{r}
+# Get the frequencies of the NC after filtering the 0 injection sites
+
+# E.g., V30.x is a negative control in brain 2 from the first round 
+# and has 20 counts of 1, and 1 count of 2
+brain1f[brain1f$V15.x > 0,] %>% select(V15.x) %>% table()
+brain2f[brain2f$V30.x > 0,] %>% select(V30.x) %>% table()
+brain3f[brain3f$V45.x > 0,] %>% select(V45.x) %>% table()
+brain4f[brain4f$V60.x > 0,] %>% select(V60.x) %>% table()
+brain5f[brain5f$V75.x > 0,] %>% select(V75.x) %>% table()
+brain6f[brain6f$V90.x > 0,] %>% select(V90.x) %>% table()
+
+brain1s[brain1s$V15.y > 0,] %>% select(V15.y) %>% table()
+brain2s[brain2s$V30.y > 0,] %>% select(V30.y) %>% table()
+brain3s[brain3s$V45.y > 0,] %>% select(V45.y) %>% table()
+brain4s[brain4s$V60.y > 0,] %>% select(V60.y) %>% table()
+brain5s[brain5s$V75.y > 0,] %>% select(V75.y) %>% table()
+brain6s[brain6s$V90.y > 0,] %>% select(V90.y) %>% table()
+```
+
+# 4 - Remove all barcodes with a target site count >= injection site (maximum among the injection sites). Identification of these barcodes is done using the first round dataset. From then on, we only focus on the counts of these barcodes from the second round dataset.
+
+# BRAIN 2
+
+```{r}
+# Step by step explanation for the brain 2 dataset 
+# (starting from brain 2 not 1 as the first brain is a special case - it has only one injection site)
+
+# Split the brain dataset into one with injection sites and negative control removed 
+# and one with just the injection sites
+
+# _ni - no injections
+# remove the columns that contain injection sites or negative control by index
+# index need to be specified manually based on the mapping file
+# "Mseq226 sample code in barcode matrix.xlsx"
+brain2f_ni <- brain2f[,-c(12,14:17)]
+
+# _injections - only injection sites present
+# keep the columns with injection sites and the id by index
+brain2f_injection <- brain2f[,c(12,15:18)]
+
+# in the dataset with no injection sites
+# find the maximum value across all columns (other than id column) 
+brain2f_ni$max <- apply(brain2f_ni[,-ncol(brain2f_ni)],1, max)
+
+# Find the maximum value among the injection sites
+brain2f_injection$max_injection <- apply(brain2f_injection[,-ncol(brain2f_injection)],1, max, na.rm=TRUE)
+
+# filter only the rows where the maximum value in the _ni dataset
+# is smaller than the maximum value in the injection dataset
+# (where maximum value across target sites is smaller than the injection site value)
+
+# Keep the IDs of those rows
+brain2f_IDs <- brain2f_ni %>% filter(brain2f_ni$max < brain2f_injection$max_injection) %>% select("id") %>% unique()
+```
+
+# Checking
+
+```{r}
+# If you want to check the code above actually does what it is supposed to:
+
+# Create a new variable "boolean" that contains TRUE or FALSE depending
+# whether the target < injection condition is met
+brain2f_ni$boolean <- brain2f_ni$max < brain2f_injection$max_injection
+# merge the _in and _injection datasets
+check2 <- merge(brain2f_ni, brain2f_injection, by = "id", all = TRUE)
+
+```
+
+```{r}
+# Remove unnecessary datasets from the environment
+remove(brain2f_ni, brain2f_injection, brain2f)
+```
+
+# Repeat for each brain in the first round
+
+# BRAIN 1 - this one is slightly different
+
+```{r}
+brain1f_ni <- brain1f[,-c(12,14)]
+brain1f_injection <- brain1f[,c(12,15)]
+brain1f_injection[brain1f_injection == 0] <- NA
+brain1f_ni$max <- apply(brain1f_ni[,-ncol(brain1f_ni)],1, max)
+# Finding the min of injection sites is skipped because there was just one injection site
+
+brain1f_IDs <- brain1f_ni %>% filter(brain1f_ni$max < brain1f_injection$V93.x) %>% select("id") %>% unique()
+
+brain1f_ni$boolean <- brain1f_ni$max < brain1f_injection$V93.x
+check1 <- merge(brain1f_ni, brain1f_injection, by = "id", all = TRUE)
+
+remove(brain1f_ni, brain1f_injection, brain1f)
+```
+
+# BRAIN 3
+
+```{r}
+brain3f_ni <- brain3f[,-c(12,14:16)]
+brain3f_injection <- brain3f[,c(12,15,16,17)]
+brain3f_ni$max <- apply(brain3f_ni[,-ncol(brain3f_ni)],1, max)
+brain3f_injection$max_injection <- apply(brain3f_injection[,-ncol(brain3f_injection)],1, max, na.rm=TRUE)
+brain3f_IDs <- brain3f_ni %>% filter(brain3f_ni$max < brain3f_injection$max_injection) %>% select("id") %>% unique()
+
+brain3f_ni$boolean <- brain3f_ni$max < brain3f_injection$max_injection
+check3 <- merge(brain3f_ni, brain3f_injection, by = "id", all = TRUE)
+
+remove(brain3f_ni, brain3f_injection, brain3f)
+```
+
+# BRAIN 4
+
+```{r}
+brain4f_ni <- brain4f[,-c(12,14:17)]
+brain4f_injection <- brain4f[,c(12,15:18)]
+brain4f_ni$max <- apply(brain4f_ni[,-ncol(brain4f_ni)],1, max)
+brain4f_injection$max_injection <- apply(brain4f_injection[,-ncol(brain4f_injection)],1, max, na.rm=TRUE)
+brain4f_IDs <- brain4f_ni %>% filter(brain4f_ni$max < brain4f_injection$max_injection) %>% select("id") %>% unique()
+
+brain4f_ni$boolean <- brain4f_ni$max < brain4f_injection$max_injection
+check4 <- merge(brain4f_ni, brain4f_injection, by = "id", all = TRUE)
+
+remove(brain4f_ni, brain4f_injection, brain4f)
+```
+
+# BRAIN 5
+
+```{r}
+brain5f_ni <- brain5f[,-c(12,14:16)]
+brain5f_injection <- brain5f[,c(12,15:17)]
+brain5f_ni$max <- apply(brain5f_ni[,-ncol(brain5f_ni)],1, max)
+brain5f_injection$max_injection <- apply(brain5f_injection[,-ncol(brain5f_injection)],1, max, na.rm=TRUE)
+brain5f_IDs <- brain5f_ni %>% filter(brain5f_ni$max < brain5f_injection$max_injection) %>% select("id") %>% unique()
+
+brain5f_ni$boolean <- brain5f_ni$max < brain5f_injection$max_injection
+check5 <- merge(brain5f_ni, brain5f_injection, by = "id", all = TRUE)
+
+remove(brain5f_ni, brain5f_injection, brain5f)
+```
+
+# BRAIN 6
+
+```{r}
+brain6f_ni <- brain6f[,-c(12,14:16)]
+brain6f_injection <- brain6f[,c(12,15,16,17)]
+brain6f_ni$max <- apply(brain6f_ni[,-ncol(brain6f_ni)],1, max)
+brain6f_injection$max_injection <- apply(brain6f_injection[,-ncol(brain6f_injection)],1, max, na.rm=TRUE)
+brain6f_IDs <- brain6f_ni %>% filter(brain6f_ni$max < brain6f_injection$max_injection) %>% select("id") %>% unique()
+
+brain6f_ni$boolean <- brain6f_ni$max < brain6f_injection$max_injection
+check6 <- merge(brain6f_ni, brain6f_injection, by = "id", all = TRUE)
+
+remove(brain6f_ni, brain6f_injection, brain6f)
+```
+
+```{r}
+check1 %>% filter(boolean == FALSE)
+check2 %>% filter(boolean == FALSE)
+check3 %>% filter(boolean == FALSE)
+check4 %>% filter(boolean == FALSE)
+check5 %>% filter(boolean == FALSE)
+check6 %>% filter(boolean == FALSE)
+```
+
+# Filter the second round datasets based on the _IDs vector
+
+```{r}
+# In the brains from the second round, keep only barcodes
+# with the IDs that met the filtering criteria above 
+brain1s <- brain1s %>% filter(id %in% brain1f_IDs$id)
+brain2s <- brain2s %>% filter(id %in% brain2f_IDs$id)
+brain3s <- brain3s %>% filter(id %in% brain3f_IDs$id)
+brain4s <- brain4s %>% filter(id %in% brain4f_IDs$id)
+brain5s <- brain5s %>% filter(id %in% brain5f_IDs$id)
+brain6s <- brain6s %>% filter(id %in% brain6f_IDs$id)
+```
+
+```{r}
+# # Remove the "check" datasets
+ remove(check1)
+ remove(check2)
+ remove(check3)
+ remove(check4)
+ remove(check5)
+ remove(check6)
+```
+
+# 5 - Remove all barcodes with counts in the negative control samples.
+
+```{r}
+# Keep only the barcodes that had 0 in the NC column
+brain1s <- brain1s %>% filter(V15.y == 0)
+brain2s <- brain2s %>% filter(V30.y == 0)
+brain3s <- brain3s %>% filter(V45.y == 0)
+brain4s <- brain4s %>% filter(V60.y == 0)
+brain5s <- brain5s %>% filter(V75.y == 0)
+brain6s <- brain6s %>% filter(V90.y == 0)
+```
+
+# 6 - Investigate the relationship between barcode counts at the injection site and the number of targets to define an injection site count threshold.
+
+```{r}
+# Divide the brain datasets into "no injection"/"only injection" as before
+
+# Injections only
+brain1s_injection <- brain1s[,c(12,15)]
+brain2s_injection <- brain2s[,c(12,15:18)]
+brain3s_injection <- brain3s[,c(12,15,16,17)]
+brain4s_injection <- brain4s[,c(12,15:18)]
+brain5s_injection <- brain5s[,c(12,15,16,17)]
+brain6s_injection <- brain6s[,c(12,15,16,17)]
+```
+
+```{r}
+# No injection sites and no negative control
+brain1s_ni <- brain1s[,-c(12,15)]
+brain2s_ni <- brain2s[,-c(12,14:17)]
+brain3s_ni <- brain3s[,-c(12,14:16)]
+brain4s_ni <- brain4s[,-c(12,14:17)]
+brain5s_ni <- brain5s[,-c(12,14:16)]
+brain6s_ni <- brain6s[,-c(12,14:16)]
+```
+
+```{r}
+# Binarise the dataset: if any count is present, make it 1, otherwise 0
+brain1s_ni_binary <- as.data.frame(apply(brain1s_ni[,-ncol(brain1s_ni)],2, function(x) {ifelse(x>0, 1, 0)}))
+brain2s_ni_binary <- as.data.frame(apply(brain2s_ni[,-ncol(brain2s_ni)],2, function(x) {ifelse(x>0, 1, 0)}))
+brain3s_ni_binary <- as.data.frame(apply(brain3s_ni[,-ncol(brain3s_ni)],2, function(x) {ifelse(x>0, 1, 0)}))
+brain4s_ni_binary <- as.data.frame(apply(brain4s_ni[,-ncol(brain4s_ni)],2, function(x) {ifelse(x>0, 1, 0)}))
+brain5s_ni_binary <- as.data.frame(apply(brain5s_ni[,-ncol(brain5s_ni)],2, function(x) {ifelse(x>0, 1, 0)}))
+brain6s_ni_binary <- as.data.frame(apply(brain6s_ni[,-ncol(brain6s_ni)],2, function(x) {ifelse(x>0, 1, 0)}))
+```
+
+```{r}
+# Count the total number of target regions where barcodes were found
+# Count number of 1s in each row and add it as a variable sum
+brain1s_ni_binary$targets_no <- apply(brain1s_ni_binary[,-ncol(brain1s_ni_binary)],1, sum)
+brain2s_ni_binary$targets_no <- apply(brain2s_ni_binary[,-ncol(brain2s_ni_binary)],1, sum)
+brain3s_ni_binary$targets_no <- apply(brain3s_ni_binary[,-ncol(brain3s_ni_binary)],1, sum)
+brain4s_ni_binary$targets_no <- apply(brain4s_ni_binary[,-ncol(brain4s_ni_binary)],1, sum)
+brain5s_ni_binary$targets_no <- apply(brain5s_ni_binary[,-ncol(brain5s_ni_binary)],1, sum)
+brain6s_ni_binary$targets_no <- apply(brain6s_ni_binary[,-ncol(brain6s_ni_binary)],1, sum)
+```
+
+```{r}
+# Adding the value of targets sites number for each barcode into the injection dataset
+brain1s_injection$targets_no <- brain1s_ni_binary$targets_no
+brain2s_injection$targets_no <- brain2s_ni_binary$targets_no
+brain3s_injection$targets_no <- brain3s_ni_binary$targets_no
+brain4s_injection$targets_no <- brain4s_ni_binary$targets_no
+brain5s_injection$targets_no <- brain5s_ni_binary$targets_no
+brain6s_injection$targets_no <- brain6s_ni_binary$targets_no
+```
+
+```{r}
+# Remove the unnecessary datasets:
+remove(brain1s_ni)
+remove(brain2s_ni)
+remove(brain3s_ni)
+remove(brain4s_ni)
+remove(brain5s_ni)
+remove(brain6s_ni)
+
+remove(brain1s_ni_binary)
+remove(brain2s_ni_binary)
+remove(brain3s_ni_binary)
+remove(brain4s_ni_binary)
+remove(brain5s_ni_binary)
+remove(brain6s_ni_binary)
+```
+
+```{r}
+# In the injection dataset, for each barcode choose the maximum value out of the injection sites
+# This is considered an actual injection site
+
+brain2s_injection$injection <- apply(brain2s_injection[,c(1:4)],1, max)
+brain3s_injection$injection <- apply(brain3s_injection[,c(1:3)],1, max)
+brain4s_injection$injection <- apply(brain4s_injection[,c(1:4)],1, max)
+brain5s_injection$injection <- apply(brain5s_injection[,c(1:3)],1, max)
+brain6s_injection$injection <- apply(brain6s_injection[,c(1:3)],1, max)
+```
+
+
+```{r}
+# Add a variable indicating from which brain a given barcode comes from
+# Combine all brains into one
+brain1s_inj <- brain1s_injection %>% rename("injection" = "V93.y") %>% mutate("brain" = "one")
+brain2s_inj <- brain2s_injection[,c(5,6,7)] %>% mutate("brain" = "two")
+brain3s_inj <- brain3s_injection[,c(4,5,6)] %>% mutate("brain" = "three")
+brain4s_inj <- brain4s_injection[,c(5,6,7)] %>% mutate("brain" = "four")
+brain5s_inj <- brain5s_injection[,c(4,5,6)] %>% mutate("brain" = "five")
+brain6s_inj <- brain6s_injection[,c(4,5,6)] %>% mutate("brain" = "six")
+
+brains_figure <- rbind(brain1s_inj, brain2s_inj, brain3s_inj, brain4s_inj, brain5s_inj, brain6s_inj)
+```
+
+
+```{r}
+head(brains_figure)
+```
+
+```{r}
+bins_seq <- seq(1, 9350, by = 20)
+brains_figure$injection_binned <- bin_data(brains_figure$injection, bins = bins_seq, boundaryType = "lcro]")
+```
+
+```{r, warning=FALSE, message=FALSE}
+# prepare the dataset for the figure
+brains_figure <- brains_figure %>% group_by(injection_binned, brain, targets_no) %>% summarise(count = n()) %>%
+            pivot_wider(names_from = targets_no, values_from = count) %>% as.data.frame()
+
+```
+
+
+```{r}
+brains_figure <- brains_figure %>% rename("one" = "1", "two" = "2", "three" = "3", "four" = "4",
+                                "five" = "5", "six" = "6", "seven" = "7", "eight" = "8", "nine" = "9", 
+                                "ten" = "10", "eleven" = "11")
+
+# remove 0 target sites
+brains_figure <- brains_figure %>% select(-3)
+
+# replace NAs with 0
+brains_figure[is.na(brains_figure)] <- 0
+```
+
+
+```{r}
+# Convert the counts to percentages (normalised by the barcode counts intervals e.g., divide each value in an interval [1,51) in a given brain by the sum of the values in that row; >>> 62% of barcodes in [1,21) interval in brain 1 project to one target area, 21% to two areas, etc.)
+brains_figure_percent <- cbind(injection_binned = brains_figure$injection_binned, brain = brains_figure$brain, as.data.frame(t(apply(brains_figure[,-c(1,2)], 1, function(row) round(row / sum(row), 5)))))
+
+brains_figure_percent$brain <- as.factor(brains_figure_percent$brain)
+```
+
+```{r}
+brains_figure_percent_long <- brains_figure_percent %>% pivot_longer(names_to = "target_no", values_to = "percentage", cols = -c(injection_binned, brain))
+brains_figure_percent_long$target_no <- factor(brains_figure_percent_long$target_no, 
+                                               levels = c("one", "two", "three", "four", 
+                                                          "five", "six", "seven", "eight",
+                                                           "nine", "ten", "eleven"))
+```
+
+```{r, warning = FALSE}
+targets_fig <- ggplot(brains_figure_percent_long, 
+                      aes(x = injection_binned, y = percentage, 
+                          color = brain, group = brain)) + 
+  geom_line() + 
+  geom_point(alpha = 0.5) +
+  facet_wrap(~target_no) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.title=element_text(size=14,face="bold")) +
+  #theme(axis.text=element_text(size=12))
+  scale_x_discrete(breaks = unique(brains_figure_percent_long$injection_binned)[seq(1, length(unique(brains_figure_percent_long$injection_binned)), 10)]) +
+  xlab("Injection counts (binned every 20 counts)") +
+  ylab("Proportion") +
+  scale_color_discrete(breaks = c("one", "two", "three", "four", "five", "six"))
+
+targets_fig
+```
+
+
+# closer look
+```{r}
+brains_figure_percent_zoom_in <- brains_figure_percent[c(1:468),]
+
+brains_figure_percent_long_zoom_in <- brains_figure_percent_zoom_in %>% 
+  pivot_longer(names_to = "target_no", values_to = "percentage", cols = -c(injection_binned, brain))
+
+brains_figure_percent_long_zoom_in$target_no <- factor(brains_figure_percent_long_zoom_in$target_no, 
+                                               levels = c("one", "two", "three", "four", 
+                                                          "five", "six", "seven", "eight",
+                                                          "nine", "ten", "eleven", "twelve", "thirteen"))
+```
+
+```{r, warning = FALSE}
+targets_fig_zoom_in <- ggplot(brains_figure_percent_long_zoom_in, aes(x = injection_binned, y = percentage, color = brain, group = brain)) + geom_line() + geom_point(alpha = 0.5) +
+  facet_wrap(~target_no) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.title=element_text(size=14,face="bold")) +
+  scale_x_discrete(breaks = unique(brains_figure_percent_long$injection_binned)[seq(1, length(unique(brains_figure_percent_long$injection_binned)), 5)]) +
+  xlab("Injection counts (binned every 20 counts)") +
+  ylab("Proportion") +
+  scale_color_discrete(breaks = c("one", "two", "three", "four", "five", "six"))
+
+targets_fig_zoom_in
+```
+```{r, warning = FALSE}
+brains_figure_percent_long_ONE = brains_figure_percent_long[brains_figure_percent_long$target_no == "one",]
+
+targets_fig_one <- ggplot(brains_figure_percent_long_ONE, 
+                      aes(x = injection_binned, y = percentage, 
+                          color = brain, group = brain)) + 
+  geom_line() + 
+  geom_point(alpha = 0.5) +
+  facet_wrap(~target_no) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.title=element_text(size=14,face="bold")) +
+  #theme(axis.text=element_text(size=12))
+  scale_x_discrete(breaks = unique(brains_figure_percent_long$injection_binned)[seq(1, length(unique(brains_figure_percent_long$injection_binned)), 10)]) +
+  xlab("Injection counts (binned every 20 counts)") +
+  ylab("Proportion") +
+  scale_color_discrete(breaks = c("one", "two", "three", "four", "five", "six"))
+
+targets_fig_one
+
+```
+
+# Remove all barcodes with counts below 800 at the injection site
+
+```{r}
+brains_figure <- rbind(brain1s_inj, brain2s_inj, brain3s_inj, brain4s_inj, brain5s_inj, brain6s_inj)
+#new threshold for spike-in data
+threshold <- 800
+
+#Get all of the unique barcodes (neurons) which pass the threshold.
+injection_over_threshold_IDs_1 <- brain1s_inj %>% filter(injection > threshold) %>% select(id) 
+injection_over_threshold_IDs_2 <- brain2s_inj %>% filter(injection > threshold) %>% select(id)
+injection_over_threshold_IDs_3 <- brain3s_inj %>% filter(injection > threshold) %>% select(id)
+injection_over_threshold_IDs_4 <- brain4s_inj %>% filter(injection > threshold) %>% select(id)
+injection_over_threshold_IDs_5 <- brain5s_inj %>% filter(injection > threshold) %>% select(id)
+injection_over_threshold_IDs_6 <- brain6s_inj %>% filter(injection > threshold) %>% select(id)
+```
+
+
+```{r}
+b1 <- brain1s %>% filter(id %in% injection_over_threshold_IDs_1$id)
+b2 <- brain2s %>% filter(id %in% injection_over_threshold_IDs_2$id)
+b3 <- brain3s %>% filter(id %in% injection_over_threshold_IDs_3$id)
+b4 <- brain4s %>% filter(id %in% injection_over_threshold_IDs_4$id)
+b5 <- brain5s %>% filter(id %in% injection_over_threshold_IDs_5$id)
+b6 <- brain6s %>% filter(id %in% injection_over_threshold_IDs_6$id)
+```
+
+# Rename the file columns appropriately and establish the injection site as the one
+# that had a maximum count across the different dissections at the injection
+
+```{r}
+columns <- c("OLF", "MO", "ORB", "PFC", "SS", "vStr", "RSC", "PTL", "VIS", "dStr", "ACA", "OLF_bulb", "Cerebellum", "id", "injection", "injection_site", "brain", "EC")
+
+# Brain 1
+brain1 <- b1 %>% rename(injection = V93.y) %>% select(-injection,injection) %>% 
+          mutate(injection_site = "V93.y", brain = "one") %>% mutate("EC" = "MEC") 
+colnames(brain1) <- columns
+
+# Brain 2
+brain2 <- b2
+brain2$injection <- apply(brain2[,c(12,15:17)],1, max)
+brain2$injection_site <- colnames(brain2[,c(12,15:17)])[max.col(brain2[,c(12,15:17)],ties.method="random")]
+brain2 <- brain2 %>% mutate(brain = "two", EC = case_when(
+                  injection_site == "V94.y" ~ "MEC",
+                  injection_site == "V95.y" ~ "MEC",
+                  injection_site == "V96.y" ~ "LEC",
+                  injection_site == "V97.y" ~ "MEC")) %>%
+          select(-c(V94.y, V95.y, V96.y, V97.y)) 
+
+colnames(brain2) <- columns
+
+# Brain 3
+brain3 <- b3
+brain3$injection <- apply(brain3[,c(12,15:16)],1, max)
+brain3$injection_site <- colnames(brain3[,c(12,15:16)])[max.col(brain3[,c(12,15:16)],ties.method="random")]
+brain3 <- brain3 %>% mutate(brain = "three", EC = case_when(
+                  injection_site == "V98.y" ~ "MEC",
+                  injection_site == "V99.y" ~ "LEC",
+                  injection_site == "V100.y" ~ "LEC")) %>%
+          select(-c(V98.y, V99.y, V100.y)) 
+
+colnames(brain3) <- columns
+
+# Brain 4
+brain4 <- b4
+brain4$injection <- apply(brain4[,c(12,15:17)],1, max)
+brain4$injection_site <- colnames(brain4[,c(12,15:17)])[max.col(brain4[,c(12,15:17)],ties.method="random")]
+brain4 <- brain4 %>% mutate(brain = "four", EC = case_when(
+                  injection_site == "V101.y" ~ "MEC",
+                  injection_site == "V102.y" ~ "LEC",
+                  injection_site == "V103.y" ~ "LEC",
+                  injection_site == "V104.y" ~ "MEC")) %>%
+          select(-c(V101.y, V102.y, V103.y, V104.y)) 
+
+colnames(brain4) <- columns
+
+# Brain 5
+brain5 <- b5
+brain5$injection <- apply(brain5[,c(12,15:16)],1, max)
+brain5$injection_site <- colnames(brain5[,c(12,15:16)])[max.col(brain5[,c(12,15:16)],ties.method="random")]
+brain5 <- brain5 %>% mutate(brain = "five", EC = case_when(
+                  injection_site == "V105.y" ~ "MEC",
+                  injection_site == "V106.y" ~ "LEC",
+                  injection_site == "V107.y" ~ "LEC")) %>%
+          select(-c(V105.y, V106.y, V107.y)) 
+
+colnames(brain5) <- columns
+
+# Brain 6
+brain6 <- b6 
+brain6$injection <- apply(brain6[,c(12,15:16)],1, max)
+brain6$injection_site <- colnames(brain6[,c(12,15:16)])[max.col(brain6[,c(12,15:16)],ties.method="random")]
+brain6 <- brain6 %>% mutate(brain = "six", EC = case_when(
+                  injection_site == "V108.y" ~ "LEC",
+                  injection_site == "V109.y" ~ "LEC",
+                  injection_site == "V110.y" ~ "LEC")) %>%
+          select(-c(V108.y, V109.y, V110.y)) 
+
+colnames(brain6) <- columns
+```
+
+```{r}
+brains <- rbind(brain1, brain2, brain3, brain4, brain5, brain6)
+```
+
+```{r}
+brains$brain <- factor(brains$brain, levels = c("one", "two", "three", 
+                                                "four", "five", "six"))
+brains$EC <- as.factor(brains$EC)
+```
+
+
+# 7 - Remove all barcodes with a target count less than 5 in all of the following target sites: VIS,ACA,PFC,SS,ORB,MO,RSC,PTL. At least one region needs to have a count of over 5.
+
+```{r}
+# If all listed regions have counts of less than 5, return TRUE, otherwise FALSE. Save in a variable "boolean"
+brains$boolean <- apply(brains[,c("VIS", "ACA", "PFC", "SS", "ORB", "MO", "RSC", "PTL")],1, function(x) all(x<5))
+
+# Choose only rows that had FALSE in the boolean variable (at least on of the regions had a count of over 5)
+brains_filter_5 <- brains %>% filter(boolean == FALSE) %>% select(-boolean)
+
+
+```
+
+```{r check_ec_datasets}
+
+mec = brains_filter_5[brains_filter_5$EC == "MEC", ] 
+mec = mec[mec$injection > 800,] # 2853 neurons, as expected
+
+lec = brains_filter_5[brains_filter_5$EC == "LEC", ] 
+lec = lec[lec$injection > 800,] # 1689 neurons, as expected
+
+```
+
+# Save Data
+
+```{r save_manuscript_data}
+
+write.csv(brains_filter_5, "data/ec_manuscript_data.csv")
+
+```
+

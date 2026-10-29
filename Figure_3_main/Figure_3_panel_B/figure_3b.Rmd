@@ -1,0 +1,103 @@
+---
+title: "EC Manuscript, Figure 3b"
+author: "Edward Agboraw"
+date: "2026-08-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+# load libraries
+library(dplyr)
+library(tidyverse)
+library(ggpubr)
+
+```
+
+## Load Data
+
+Load barcode count matrix
+```{r load_data}
+
+ec_data = read.csv("ec_manuscript_data.csv", row.names = 1)
+
+
+```
+
+Load HBMAP results
+```{r mcmc_unique}
+
+mcmc_unique_EC8 = readRDS("ec_hbmap_results.rds")
+
+```
+
+Extract Motif Allocations, and add to barcode count matrix as new column.
+```{r}
+
+EC8_Z_reordered = mcmc_unique_EC8$Z
+
+ec_data$allocation = unlist(EC8_Z_reordered)
+
+```
+
+## Generate Plot
+
+```{r}
+
+nc_targets = c("PFC","ORB", "MO", "SS", "ACA", "PTL", "VIS", "RSC")
+
+```
+
+```{r motif_heatmap_function}
+
+motif_group_heatmaps = function(data, motif_group, targets, high_col){
+  
+  # create motif dataframe
+  motif_data = data %>% filter(allocation %in% motif_group)
+  
+  # filter for targets
+  target_data = motif_data %>% select(allocation, all_of(targets))
+  
+  # get per-motif regional barcode count sums
+  motif_data_sums = target_data %>% group_by(allocation) %>%
+                          summarise(across(targets, sum, na.rm = TRUE))
+  
+  # row-sum normalize the sum data
+  target_sums = motif_data_sums %>% select(all_of(targets))
+  motif_data_sum_norm = as.data.frame(t((apply(target_sums, 1, function(x) (x / sum(x))))))
+  
+  # re-attach metadata
+  motif_data_sum_norm$allocation = motif_data_sums$allocation
+  
+  
+  # convert to long format
+  motif_data_sum_norm_long = motif_data_sum_norm %>% pivot_longer(-allocation,
+                                                                          names_to = "region",
+                                                                          values_to = "proj_str")
+  
+  # define order of regions on the x-axis
+  motif_data_sum_norm_long$region = factor(motif_data_sum_norm_long$region,
+                                          levels = targets)
+
+  # define motif allocations as groups, rather than a continous numerical axis
+  motif_data_sum_norm_long$allocation = factor(motif_data_sum_norm_long$allocation,
+                                                  levels = motif_group)
+  
+  # generate ggplot
+  ggplot(motif_data_sum_norm_long, aes(region, allocation, fill= proj_str)) + 
+    geom_tile() +
+    scale_fill_gradient(low="white", high= high_col, limits = c(0, 1)) + theme_minimal()
+  
+}
+
+
+
+```
+
+```{r}
+
+all_motifs = c(5, 1, 6, 13, 55, 4, 56, 24, 23, 33, 40, 64, 26, 25, 61)
+
+motif_group_heatmaps(ec_data, all_motifs, nc_targets, "blue")
+
+```

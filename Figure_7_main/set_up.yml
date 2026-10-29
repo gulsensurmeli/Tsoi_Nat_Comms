@@ -1,0 +1,21 @@
+name: ec_analysis_fig_7
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.13
+  - numpy
+  - pandas
+  - scipy
+  - statsmodels
+  - tqdm
+  - matplotlib
+  - seaborn
+  - pydeseq2
+  - anndata       
+  - scanpy      
+  - pip
+  - pip:
+    - vedo  
+    - brainrender          

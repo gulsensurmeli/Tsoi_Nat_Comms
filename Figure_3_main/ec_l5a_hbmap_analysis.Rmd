@@ -1,0 +1,141 @@
+---
+title: "EC L5a HBMAP Analysis (Manuscript)"
+author: "Edward Agboraw"
+date: "2026-09-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## HBMAP Analysis Code (HPC)
+
+```{r load_data}
+
+EC8_new <- read.csv("ec_manuscript_data.csv", row.names = 1)
+
+```
+
+
+```{r}
+
+# define target regions of interest
+targets= c("PFC", "ORB", "MO", "ACA", "SS", "VIS", "PTL", "RSC")
+R = length(targets)
+
+# subset by target area + brain metadata column
+ec_targets = ec_data %>% select(all_of(c(targets, "brain")))
+
+# now we can convert to the standard hbmap input format
+EC8_new = lapply(unique(ec_targets$brain), function(cat){
+  t(ec_targets[ec_targets$brain==cat,1:R])
+})
+
+EC8_EC_label <- lapply(unique(ec_data$brain), function(cat){
+  
+  ec_data[ec_data$brain==cat,]$EC
+
+})
+
+
+C <- sapply(1:6, function(m) ncol(EC8_new[[m]]))
+R <- 8
+M <- 6
+
+```
+
+```{r}
+
+#Initialize z
+
+df <- lapply(1:M,function(m){
+  normalized_mat <- apply(EC8_new[[m]], 2, function(col) col / max(col))})
+
+df <- t(do.call(cbind, df))
+
+cosine_normalize <- function(mat) {
+  # Normalize each row by its magnitude
+  return(mat / sqrt(rowSums(mat^2)))
+}
+
+df <- cosine_normalize(mat = df)
+
+
+kmeans_result <- kmeans(df, centers = 40, iter.max = 100, nstart = 25)$cluster
+
+
+C_cumsum <- c(0, cumsum(sapply(1:M, function(m) ncol(EC8_new[[m]]))))
+
+clustinit <- lapply(1:M,
+                    function(m) kmeans_result[(C_cumsum[m]+1):C_cumsum[m+1]])
+
+
+
+```
+
+```{r}
+
+mcmc_all_EC8 <- mcmc_run_all(Y = EC8_new,
+                             J = 80,
+                             number_iter = 20000,
+                             thinning = 5,
+                             burn_in = 5000,
+                             adaptive_prop = 0.0001,
+                             print_Z = TRUE,
+                             a_gamma = 30,
+                             b_gamma = 1,
+                             a_alpha = 1/5,
+                             b_alpha = 1/2,
+                             Z.init = clustinit)
+
+
+```
+
+
+```{r}
+
+# Posterior similarity matrix
+psm_EC8 = similarity_matrix(mcmc_run_all_output = mcmc_all_EC8)
+
+
+```
+
+```{r}
+
+# Reordered posterior samples of z
+EC8_z_reordered <- z_trace_updated(mcmc_run_all_output = mcmc_all_EC8)
+
+# optimal clustering
+EC8_Z <- opt.clustering.comb(z_trace = EC8_z_reordered,
+                             post_similarity = psm_EC8,
+                             max.k = max(k))
+
+```
+
+
+```{r}
+
+# MCMC unique
+mcmc_unique_EC8 <- mcmc_run_post(mcmc_run_all_output = mcmc_all_EC8,
+                                 Z = EC8_Z,
+                                 thinning = 5,
+                                 burn_in = 5000,
+                                 number_iter = 15000,
+                                 Y = EC8_new,
+                                 a_gamma = 30,
+                                 b_gamma = 1,
+                                 regions.name = rownames(EC8_new[[1]]),
+                                 epsilon = 0.01)
+
+```
+
+## Save Results
+
+```{r}
+
+saveRDS(mcmc_unique_EC8, "ec_hbmap_results.rds")
+
+```
+
+

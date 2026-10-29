@@ -1,0 +1,21 @@
+name: ec_analysis_fig_5
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.13
+  - pandas
+  - scipy
+  - seaborn
+  - tqdm
+  - matplotlib
+  - vedo
+  - scikit_posthocs
+  - pip
+  - pip:
+      - brainglobe_atlasapi
+      - brainrender
+      - pynrrd
+      - openpyxl
+

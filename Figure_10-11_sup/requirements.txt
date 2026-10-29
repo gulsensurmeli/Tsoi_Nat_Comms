@@ -1,0 +1,9 @@
+# Python environment for the ECL5a alt-PM/AT-definition projection-modeling
+# pipeline. Versions are those the pipeline was developed and verified
+# against; nearby versions should work, but statsmodels is load-bearing for
+# script 05 (BinomialBayesMixedGLM) so pin it if you hit issues.
+numpy==2.4.4
+scipy==1.17.1
+statsmodels==0.14.6
+pandas==3.0.2
+matplotlib==3.10.8

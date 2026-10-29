@@ -1,0 +1,170 @@
+---
+title: "Figure 7G (Bulk Deconvolution)"
+author: "Edward Agboraw"
+date: "2026-09-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(MuSiC)
+library(SingleCellExperiment)
+library(DESeq2)
+library(tximport)
+library(rtracklayer)
+library(tidyverse)
+
+
+```
+
+## Load Data
+
+Load bulk transcriptomic data
+```{r}
+
+dds = readRDS("ec_bulk_dds_obj.rds")
+
+```
+
+Load gene_info metadata for bulk transcriptomic data
+```{r}
+
+gene_info = readRDS("ec_gene_info.rds")
+
+```
+
+Create Single-Cell Reference Object
+- source of matrix =
+```{r}
+
+#get matrix
+ref_matrix = read.csv("hpf_v3_ref_mat.csv")
+
+#set index
+rownames(ref_matrix) = ref_matrix$cell_label
+ref_matrix$cell_label = NULL
+
+#add metadata
+ref_meta = read.csv("hpf_v3_ref_metadata.csv")
+ref_meta$X = NULL
+
+rownames(ref_meta) = ref_meta$cell_label
+
+# create reference
+sce <- SingleCellExperiment(assays = list(counts = t(ref_matrix)), 
+                               colData = ref_meta)
+
+```
+
+
+### Prepare SCE Object
+
+```{r Reference Expression Matrix Creation}
+
+# Convert colData to a data frame
+sceframe <- as.data.frame(colData(sce))
+
+#create single-cell reference
+assay_data <- as.matrix(assay(sce))
+
+# Convert colData and rowData to standard data frames
+pheno_data <- as.data.frame(colData(sce))
+pheno_data$cellType <- pheno_data$cell_type
+#pheno_data$SubjectName <- pheno_data$cell_label
+pheno_data$SubjectName <- pheno_data$donor_label
+feature_data <- as.data.frame(rowData(sce))
+
+# Create ExpressionSet
+eset <- ExpressionSet(assayData = assay_data,
+                      phenoData = new("AnnotatedDataFrame", data = pheno_data),
+                      featureData = new("AnnotatedDataFrame", data = feature_data))
+```
+
+
+## Run Bulk De-convolution Via MuSiC
+
+```{r, use_music}
+
+
+#eset_Bulk = expression set of our bulk data
+#sce = single cell experiment object of our data
+
+
+# Extract raw counts
+raw_counts <- counts(dds, normalized = FALSE)
+rownames(raw_counts) <- ifelse(
+   rownames(raw_counts) %in% gene_info$gene_name,
+   gene_info$gene_id,
+    rownames(raw_counts))
+
+head(rownames(raw_counts))
+
+colnames(raw_counts) = c("intEC S1", "intEC S2", "intEC S3","LEC S1", "LEC S2", "LEC S3","MEC S1","MEC S2","MEC S3")
+
+# Use the function for reference-based deconvolution
+eset_Bulk <- ExpressionSet(assayData = as.matrix(raw_counts))
+
+
+# Bulk expression matrix
+bulk.mtx = exprs(eset_Bulk)
+
+# Estimate cell type proportions
+est.prop.ec = music_prop(bulk.mtx = bulk.mtx, sc.eset = eset, sc.sce = sce, clusters = 'supertype',
+                               samples = 'donor_label', verbose = F)
+
+print(est.prop.ec$Est.prop.weighted)
+
+```
+
+
+## Generate Figure
+
+```{r, music_weighted}
+
+#Turn results into dataFrame
+deconv_data <- as.data.frame(t(est.prop.ec$Est.prop.weighted))
+
+#Run always
+deconv_data$CellType <- rownames(deconv_data)
+deconv_long <- pivot_longer(deconv_data, cols = -CellType, names_to = "Sample", values_to = "Proportion")
+deconv_long$Region <- sub(" .*", "", deconv_long$Sample)
+
+
+deconv_long$Region <- factor(deconv_long$Region, levels = c("MEC", "intEC", "LEC"))
+deconv_long$CellType <- factor(deconv_long$CellType,
+                               levels = c("0007 L5/6 IT TPE-ENT Glut_1","0008 L5/6 IT TPE-ENT Glut_2" ,
+                                          "0010 L5/6 IT TPE-ENT Glut_4" ,"0129 NP PPP Glut_1"))
+
+# Customize colors (use your preferred colors)
+custom_colors <- c("0007 L5/6 IT TPE-ENT Glut_1" = "orange",
+                   "0008 L5/6 IT TPE-ENT Glut_2" = "#F7D379",
+                   "0010 L5/6 IT TPE-ENT Glut_4" = "#619196",
+                   "0129 NP PPP Glut_1" = "#F1B3A1")
+
+# Create the plot with faceting, custom colors, and horizontal bars with a percentage x-axis
+cell <- ggplot(deconv_long, aes(x = Proportion, y = Sample, fill = CellType)) +
+  geom_bar(stat = "identity", position = "fill", color = "white", alpha = 0.95) +
+  scale_fill_manual(values = custom_colors) +
+  scale_x_continuous(labels = scales::percent) + # Use a percentage format on the x-axis
+  labs(x = "Estimated Cell Supertype Proportions (%)", y = NULL, fill = "Supertype") +
+  # Add labels only if Proportion is greater than 0%
+  #geom_text(
+  #aes(label = ifelse(Proportion > 0.005, scales::percent(Proportion, accuracy = 1), "")),
+  #position = position_fill(vjust = 0.5), size = 7) +
+  facet_wrap(~ Region, scales = "free_y", ncol = 1) + # Facet by Region with one column
+  theme_minimal() +
+  theme(
+    legend.position = "right",
+    strip.text = element_text(size = 14, face = "bold"), # Increase size and bold for facet strip labels
+    panel.spacing = unit(1, "lines"),
+    axis.title.x = element_text(size = 13, face = "bold"), # Make x-axis title bold and larger
+    axis.text.x = element_text(size = 10, face = "bold"),  # Make x-axis text bold and larger
+    axis.title.y = element_text(size = 12),
+    axis.text.y = element_text(size = 10, face = "bold")   # Adjust y-axis title size if needed
+  )
+
+print(cell)
+
+
+```

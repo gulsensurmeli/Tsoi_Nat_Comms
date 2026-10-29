@@ -1,0 +1,75 @@
+---
+title: "Figure 7D (Bulk Transcriptomics PCA Chart)"
+author: "Edward Agboraw"
+date: "2026-09-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+# load necessary libraries
+library(DESeq2)
+library(ggplot2)
+
+```
+
+## Load Data
+
+```{r load_data}
+
+dds = readRDS("ec_bulk_dds_obj.rds")
+
+```
+
+
+## Normalization
+
+```{r}
+
+# normalize counts via variance stabilizing transformation 
+dds_norm <- vst(dds)
+dds_norm$region <- factor(dds_norm$region,levels = c("LEC","intEC","MEC"))
+dds_norm$BiologicalReplicate = factor(dds_norm$BiologicalReplicate)
+
+```
+
+## Generate PCA Plot
+
+
+```{r generate_pca}
+
+
+# create PCA
+p1 <- plotPCA(
+  dds_norm,
+  intgroup = "BiologicalReplicate"
+) + 
+  theme_classic() +  # Remove grey background
+  scale_color_manual(values = c("#4CC9F0", "#94bd51", "#E76BE3")) + # Set custom colors for each region
+  theme(
+    panel.grid.minor = element_blank(),
+    #panel.border = element_rect(color = "black", fill = NA, size = 1),
+    panel.grid = element_blank()
+  ) +
+  geom_point(size = 5, stroke = 1)  # Increase size, keep stroke small
+
+p2 <- plotPCA(
+  dds_norm,
+  intgroup = "region"
+) + 
+  theme_classic() +  # Remove grey background
+  scale_color_manual(values = c("#4CC9F0", "#94bd51", "#E76BE3")) + # Set custom colors for each region
+  theme(
+    panel.grid.minor = element_blank(),
+    #panel.border = element_rect(color = "black", fill = NA, size = 1),
+    panel.grid = element_blank()
+  ) +
+  geom_point(size = 5, stroke = 1)  # Increase size, keep stroke small
+  
+
+print(p1)
+print(p2)
+
+
+```
+
